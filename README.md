@@ -37,6 +37,16 @@ uv sync
 claude mcp add cmt -e CMT_EMAIL=you@example.com -e CMT_PASSWORD=... -- uv --directory /path/to/cmt-mcp run cmt-mcp
 ```
 
+### Hermes Agent
+
+```sh
+uv run cmt-mcp-register hermes --dry-run   # preview, password masked
+uv run cmt-mcp-register hermes             # prompts for email + password, writes ~/.hermes/config.yaml
+```
+
+It prompts for your CMT email and a hidden password (or reads `CMT_EMAIL`/`CMT_PASSWORD` if set). This adds an `mcp_servers.cmt` entry (backing up the old file to `config.yaml.bak`; YAML comments are not preserved).
+Then run `/reload-mcp` in Hermes or start a new `hermes chat`, and check with `hermes mcp test cmt`.
+
 Auth is a plain HTTP login (`CMT_EMAIL`, `CMT_PASSWORD`) with automatic re-login when the session expires.
 Credentials are read from the environment and never written to disk. Accounts that require SSO/MFA are not supported.
 

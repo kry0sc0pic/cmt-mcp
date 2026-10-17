@@ -8,10 +8,12 @@ requires-python = ">=3.12"
 dependencies = [
     "httpx>=0.28.1",
     "mcp>=2.3.0",
+    "pyyaml>=6.0.3",
 ]
 
 [project.scripts]
 cmt-mcp = "cmt_mcp.server:main"
+cmt-mcp-register = "cmt_mcp.register:main"
 
 [build-system]
 requires = ["hatchling"]
