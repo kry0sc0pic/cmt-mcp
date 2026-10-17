@@ -3,7 +3,7 @@ name = "cmt-mcp"
 version = "0.1.0"
 description = "Read-only MCP server for Microsoft CMT (Conference Management Toolkit) author data"
 readme = "README.md"
-license = "MIT"
+license = "GPL-3.0-or-later"
 requires-python = ">=3.12"
 dependencies = [
     "httpx>=0.28.1",

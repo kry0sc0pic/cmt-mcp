@@ -60,3 +60,7 @@ Tests use an in-memory fake CMT (`httpx.MockTransport`), so they need no network
 
 `tools/capture.py` opens a browser (Playwright) and records XHR traffic to `captures/` (git-ignored) for
 discovering more endpoints. Captures contain personal data and session tokens; never commit them.
+
+## License
+
+GPL-3.0-or-later. See [LICENSE](LICENSE).
