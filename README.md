@@ -48,7 +48,7 @@ It prompts for your CMT email and a hidden password (or reads `CMT_EMAIL`/`CMT_P
 Then run `/reload-mcp` in Hermes or start a new `hermes chat`, and check with `hermes mcp test cmt`.
 
 Auth is a plain HTTP login (`CMT_EMAIL`, `CMT_PASSWORD`) with automatic re-login when the session expires.
-Credentials are read from the environment and never written to disk. Accounts that require SSO/MFA are not supported.
+The server reads credentials from its environment and never writes them itself. Registering with an MCP client stores them in that client's config (Claude Code: `~/.claude.json`; Hermes: `~/.hermes/config.yaml`, set to mode 600), so keep those files private. Accounts that require SSO/MFA are not supported.
 
 ## Development
 
