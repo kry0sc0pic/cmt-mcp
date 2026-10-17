@@ -31,14 +31,18 @@ def _iso(ts):
     return datetime.fromtimestamp(ts, timezone.utc).isoformat(timespec="seconds") if ts else None
 
 
+def _label(status_id, status_name) -> str | None:
+    if status_id is None and status_name is None:
+        return None
+    return status_name or ("Pending" if not status_id else f"Status {status_id}")
+
+
 def _status_view(row: dict) -> dict:
-    name = row["status_name"] or ("Pending" if not row["status_id"] else f"Status {row['status_id']}")
+    name = _label(row["status_id"], row["status_name"])
     return {
         "conference": row["conference"], "submission_id": row["submission_id"], "title": row["title"],
         "track": row["track"], "status": name, "status_id": row["status_id"],
         "num_reviews": row["num_reviews"], "num_meta_reviews": row["num_meta_reviews"],
-        "status_changed": row.get("changed", False),
-        "previous_status": row["prev_status_name"] or row["prev_status_id"],
         "last_checked": _iso(row["last_checked"]), "last_changed": _iso(row["last_changed"]),
     }
 
@@ -74,8 +78,8 @@ async def list_submissions(conference: str | None = None, refresh: bool = False)
     """List the user's submissions with status.
 
     conference: UrlSegmentName (e.g. 'MyConf2026'). If omitted, pulls submissions across ALL of the
-    user's conferences. Statuses are cached (15 min) and tracked over time: each item includes
-    status_changed / previous_status / last_changed. Set refresh=true to force a live fetch.
+    user's conferences. Returns a compact status overview (no abstract/files; use get_submission for
+    those). Results are cached for 15 min; set refresh=true to force a live fetch.
     """
     confs = [conference] if conference else [c["UrlSegmentName"] for c in await list_my_conferences(refresh)]
     sem = asyncio.Semaphore(4)
@@ -83,10 +87,8 @@ async def list_submissions(conference: str | None = None, refresh: bool = False)
     async def one(conf):
         async with sem:
             try:
-                subs, rows = await _conf_submissions(conf, refresh)
-                return [_status_view(r) | {"abstract": next((s.get("Abstract") for s in subs if s["Id"] == r["submission_id"]), None),
-                                           "files": next((s.get("SubmissionFiles") for s in subs if s["Id"] == r["submission_id"]), None)}
-                        for r in rows]
+                _, rows = await _conf_submissions(conf, refresh)
+                return [_status_view(r) for r in rows]
             except CMTAuthError:
                 raise
             except Exception as e:  # conferences where the user has no submissions/author role
@@ -96,9 +98,24 @@ async def list_submissions(conference: str | None = None, refresh: bool = False)
 
 
 @mcp.tool()
-async def get_submission_status_cache(conference: str | None = None) -> list[dict]:
-    """Return last-known submission statuses from the local cache without calling CMT (works offline)."""
-    return [_status_view(r) for r in _cache().cached_statuses(conference)]
+async def get_delta(conference: str | None = None, acknowledge: bool = True) -> dict:
+    """What changed since the last time get_delta was called: status changes, newly posted reviews,
+    and newly appearing submissions. Always fetches live data. conference: optional UrlSegmentName
+    (default: all of the user's conferences). The very first call only records a baseline and returns
+    no changes. acknowledge=false peeks without moving the baseline forward.
+    """
+    await list_submissions(conference, refresh=True)
+    d = _cache().delta(conference, acknowledge)
+    out = []
+    for c in d["changes"]:
+        r = c["row"]
+        item = {"conference": r["conference"], "submission_id": r["submission_id"], "title": r["title"],
+                "change": c["kind"], "status": _label(r["status_id"], r["status_name"]),
+                "num_reviews": r["num_reviews"]}
+        if c["kind"] == "status_changed":
+            item["previous_status"] = _label(*c["from"])
+        out.append(item)
+    return {"baseline_established": d["baseline_established"], "changes": out, "checked_at": _iso(time.time())}
 
 
 @mcp.tool()

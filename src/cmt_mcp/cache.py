@@ -23,8 +23,15 @@ class Cache:
             status_id INTEGER, status_name TEXT, num_reviews INTEGER, num_meta_reviews INTEGER,
             prev_status_id INTEGER, prev_status_name TEXT,
             first_seen REAL, last_checked REAL, last_changed REAL,
+            acked_status_id INTEGER, acked_status_name TEXT, acked_num_reviews INTEGER, acked_at REAL,
             PRIMARY KEY (conference, submission_id));
         """)
+        for col, typ in (("acked_status_id", "INTEGER"), ("acked_status_name", "TEXT"),
+                         ("acked_num_reviews", "INTEGER"), ("acked_at", "REAL")):  # migrate older DBs
+            try:
+                self.db.execute(f"ALTER TABLE status ADD COLUMN {col} {typ}")
+            except sqlite3.OperationalError:
+                pass
 
     def get(self, key: str, ttl: float):
         row = self.db.execute("SELECT value, fetched_at FROM kv WHERE key=?", (key,)).fetchone()
@@ -43,7 +50,8 @@ class Cache:
         old = self.db.execute("SELECT * FROM status WHERE conference=? AND submission_id=?", (conf, sid)).fetchone()
         changed = bool(old and (old["status_id"], old["status_name"]) != (st_id, st_name))
         if old is None:
-            self.db.execute("INSERT INTO status VALUES (?,?,?,?,?,?,?,?,NULL,NULL,?,?,?)",
+            self.db.execute("""INSERT INTO status (conference, submission_id, title, track, status_id, status_name,
+                num_reviews, num_meta_reviews, first_seen, last_checked, last_changed) VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
                 (conf, sid, sub.get("Title"), sub.get("TrackName"), st_id, st_name,
                  sub.get("NumberOfReviews"), sub.get("NumberOfMetaReviews"), now, now, now))
         else:
@@ -65,3 +73,28 @@ class Cache:
         if conf:
             q, a = q + " WHERE conference=?", (conf,)
         return [dict(r) for r in self.db.execute(q + " ORDER BY conference, submission_id", a)]
+
+    def delta(self, conf: str | None = None, acknowledge: bool = True) -> dict:
+        """Changes since the last acknowledged delta. The first ever call only sets a baseline."""
+        rows = self.cached_statuses(conf)
+        baseline_exists = self.db.execute("SELECT 1 FROM status WHERE acked_at IS NOT NULL LIMIT 1").fetchone() is not None
+        changes = []
+        for r in rows:
+            cur = (r["status_id"], r["status_name"])
+            if r["acked_at"] is None:
+                kind, frm = "new", None
+            elif (r["acked_status_id"], r["acked_status_name"]) != cur:
+                kind, frm = "status_changed", (r["acked_status_id"], r["acked_status_name"])
+            elif (r["num_reviews"] or 0) > (r["acked_num_reviews"] or 0):
+                kind, frm = "new_reviews", None
+            else:
+                continue
+            changes.append({"row": r, "kind": kind, "from": frm})
+        if acknowledge:
+            now = time.time()
+            for r in rows:
+                self.db.execute("""UPDATE status SET acked_status_id=?, acked_status_name=?, acked_num_reviews=?, acked_at=?
+                    WHERE conference=? AND submission_id=?""",
+                    (r["status_id"], r["status_name"], r["num_reviews"], now, r["conference"], r["submission_id"]))
+            self.db.commit()
+        return {"baseline_established": not baseline_exists, "changes": [] if not baseline_exists else changes}

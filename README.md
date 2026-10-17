@@ -12,18 +12,19 @@ Microsoft CMT (cmt3.research.microsoft.com): conferences, submissions, statuses 
 |---|---|
 | `list_my_conferences` | Conferences your account participates in |
 | `search_conferences` | Search all CMT conferences by name / city / country / slug |
-| `list_submissions` | Your submissions with status. **Omit `conference` to pull across all your conferences** |
-| `get_submission_status_cache` | Last-known statuses from the local cache (no network) |
+| `list_submissions` | Your submissions with status (compact: no abstract/files). **Omit `conference` to pull across all your conferences** |
+| `get_delta` | What changed since the last `get_delta` call: status changes, new reviews, new submissions |
 | `get_submission` | Full summary: authors, abstract, files, answers |
 | `get_reviews` | Reviews visible to you for a submission |
 
 `conference` is the URL segment, e.g. `MyConf2026` in `cmt3.research.microsoft.com/MyConf2026`.
 
-### Status caching
-Statuses are stored in SQLite (`.cache/cmt.db`, override with `CMT_CACHE`). Each submission records its current
-and previous status plus `last_checked` / `last_changed`, so an agent can see that a paper moved from
-*Pending* to *Reject*. Listings are cached for 15 min, summaries/reviews for 6 h; pass `refresh=true` to force a
-live fetch. `status_changed` is true only on the call that fetched the change.
+### Change tracking (`get_delta`)
+Submission statuses and review counts are kept in a local SQLite cache (`.cache/cmt.db`, override with
+`CMT_CACHE`). `get_delta` fetches live data and reports only what changed since the previous `get_delta`
+call (`status_changed`, `new_reviews`, `new`), then moves the baseline forward. The first call only records a
+baseline. Pass `acknowledge=false` to peek without consuming the changes; `list_submissions` never consumes them.
+Listings are cached for 15 min and summaries/reviews for 6 h; pass `refresh=true` to force a live fetch.
 
 ### Read-only by design
 The client sends only `GET` requests plus one allowlisted read-only `POST` (`GetSummaryView`); anything else

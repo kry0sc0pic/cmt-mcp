@@ -25,6 +25,8 @@ def clean(obj):
         for k, v in obj.items():
             if "@odata" in k or k.startswith("#"):
                 continue
+            if k.endswith("Json") and v is None:
+                continue
             if k.endswith("Json") and isinstance(v, str):
                 try:
                     out[k[:-4]] = clean(json.loads(v))

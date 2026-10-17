@@ -20,21 +20,49 @@ async def test_second_call_served_from_cache(wired):
     assert len(wired.requests) == n
 
 
-async def test_refresh_detects_status_change(wired):
-    await server.list_submissions()
+async def test_list_is_compact(wired):
+    out = await server.list_submissions()
+    assert all("abstract" not in r and "files" not in r for r in out)
+
+
+async def test_delta_first_call_sets_baseline(wired):
+    d = await server.get_delta()
+    assert d["baseline_established"] is True and d["changes"] == []
+    d = await server.get_delta()
+    assert d["baseline_established"] is False and d["changes"] == []
+
+
+async def test_delta_reports_status_change_once(wired):
+    await server.get_delta()
     wired.confs["ConfB"][0]["StatusId"], wired.confs["ConfB"][0]["StatusName"] = 1, "Accept"
-    out = await server.list_submissions(refresh=True)
-    changed = [r for r in out if r["status_changed"]]
-    assert [(r["submission_id"], r["status"], r["previous_status"]) for r in changed] == [(2, "Accept", 0)]
+    d = await server.get_delta()
+    assert [(c["submission_id"], c["change"], c["status"], c["previous_status"]) for c in d["changes"]] == \
+        [(2, "status_changed", "Accept", "Pending")]
+    assert (await server.get_delta())["changes"] == []  # acknowledged
 
 
-async def test_offline_status_cache(wired):
-    assert await server.get_submission_status_cache() == []
-    await server.list_submissions()
-    wired.requests.clear()
-    assert len(await server.get_submission_status_cache()) == 3
-    assert len(await server.get_submission_status_cache("ConfA")) == 1
-    assert wired.requests == []
+async def test_delta_not_consumed_by_list_submissions(wired):
+    await server.get_delta()
+    wired.confs["ConfB"][0]["StatusId"], wired.confs["ConfB"][0]["StatusName"] = 1, "Accept"
+    await server.list_submissions(refresh=True)  # updates cache but must not ack
+    assert len((await server.get_delta())["changes"]) == 1
+
+
+async def test_delta_peek_does_not_acknowledge(wired):
+    await server.get_delta()
+    wired.confs["ConfA"][0]["NumberOfReviews"] = 3
+    assert [c["change"] for c in (await server.get_delta(acknowledge=False))["changes"]] == ["new_reviews"]
+    assert [c["change"] for c in (await server.get_delta())["changes"]] == ["new_reviews"]
+    assert (await server.get_delta())["changes"] == []
+
+
+async def test_delta_new_submission_and_conference_scope(wired):
+    await server.get_delta()
+    wired.confs["ConfB"].append({**wired.confs["ConfB"][0], "Id": 99, "Title": "Brand new"})
+    d = await server.get_delta("ConfA")
+    assert d["changes"] == []  # scoped away from ConfB
+    d = await server.get_delta()
+    assert [(c["submission_id"], c["change"]) for c in d["changes"]] == [(99, "new")]
 
 
 async def test_inaccessible_conference_skipped_in_all_mode(wired):
@@ -60,5 +88,5 @@ async def test_details_and_reviews_cached(wired):
 async def test_tools_registered():
     names = {t.name for t in await server.mcp.list_tools()}
     assert names == {"list_my_conferences", "search_conferences", "list_submissions",
-                     "get_submission_status_cache", "get_submission", "get_reviews"}
+                     "get_delta", "get_submission", "get_reviews"}
     assert not any(n.startswith(("create", "update", "delete", "submit")) for n in names)

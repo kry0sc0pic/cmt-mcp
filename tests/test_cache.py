@@ -32,3 +32,13 @@ def test_cached_statuses_filter(cache):
     cache.record_status("B", sub(2))
     assert len(cache.cached_statuses()) == 2
     assert [r["conference"] for r in cache.cached_statuses("B")] == ["B"]
+
+
+def test_delta_cache_levels(cache):
+    cache.record_status("C", sub(1))
+    assert cache.delta()["baseline_established"] is True
+    cache.record_status("C", sub(1, 3, "Reject"))
+    cache.record_status("C", sub(2))
+    kinds = {c["row"]["submission_id"]: c["kind"] for c in cache.delta()["changes"]}
+    assert kinds == {1: "status_changed", 2: "new"}
+    assert cache.delta()["changes"] == []
